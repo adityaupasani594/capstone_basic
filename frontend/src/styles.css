@@ -1,0 +1,262 @@
+:root {
+  --bg-page: #f6f7f9;
+  --ink-main: #17212e;
+  --ink-soft: #5c6b7d;
+  --card: #ffffff;
+  --stroke: #d8dee7;
+  --stroke-strong: #bac6d5;
+  --accent: #24364a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink-main);
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  background: linear-gradient(180deg, #f8fafc 0%, #f3f5f8 100%);
+}
+
+.shell {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 28px 24px 34px;
+}
+
+.hero {
+  border: 1px solid var(--stroke);
+  background: var(--card);
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: 0 6px 22px rgba(18, 31, 45, 0.06);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: "Sora", sans-serif;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.17em;
+  color: var(--ink-soft);
+}
+
+.hero h1 {
+  margin: 10px 0 7px;
+  font-family: "Sora", sans-serif;
+  font-weight: 700;
+  font-size: clamp(1.55rem, 2.3vw, 2.25rem);
+}
+
+.hero-subtitle {
+  margin: 0;
+  color: var(--ink-soft);
+  max-width: 760px;
+  line-height: 1.45;
+  font-size: 0.97rem;
+}
+
+.tabs {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  text-decoration: none;
+  color: var(--ink-main);
+  border: 1px solid var(--stroke);
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-weight: 600;
+  transition: all 140ms ease;
+  background: #f8fafc;
+}
+
+.tab:hover {
+  border-color: var(--stroke-strong);
+  background: #ffffff;
+}
+
+.tab.active {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+.content {
+  margin-top: 16px;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 390px) 1fr;
+  gap: 14px;
+}
+
+.complex-grid {
+  grid-template-columns: minmax(340px, 430px) 1fr;
+}
+
+.panel {
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 4px 18px rgba(18, 31, 45, 0.05);
+  padding: 15px;
+}
+
+.panel h2 {
+  margin: 2px 0;
+  font-size: 1.2rem;
+  font-family: "Sora", sans-serif;
+  font-weight: 700;
+}
+
+.panel-note {
+  margin-top: 3px;
+  color: var(--ink-soft);
+  line-height: 1.38;
+  font-size: 0.92rem;
+}
+
+.panel-scroll {
+  max-height: calc(100vh - 210px);
+  overflow: auto;
+}
+
+.control-card {
+  margin: 10px 0;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: #fbfcfe;
+  padding: 11px;
+}
+
+.control-card h3 {
+  margin: 0 0 8px;
+  font-family: "Sora", sans-serif;
+  font-size: 0.96rem;
+  font-weight: 600;
+}
+
+.control-card label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 0.86rem;
+  color: #304558;
+}
+
+input[type="range"] {
+  width: 100%;
+  margin-top: 4px;
+  accent-color: #22354b;
+}
+
+.network-svg {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  background: linear-gradient(180deg, #fdfefe 0%, #f8fbfd 100%);
+}
+
+.network-svg-tall {
+  min-height: 560px;
+}
+
+.node-label {
+  fill: #ffffff;
+  font-size: 21px;
+  font-weight: 700;
+  font-family: "Sora", sans-serif;
+}
+
+.top-node-label {
+  fill: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+  font-family: "Sora", sans-serif;
+  text-transform: capitalize;
+}
+
+.stats-row {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.stat-card {
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  padding: 9px;
+  background: #f9fbfd;
+}
+
+.stat-card span {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.stat-card strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 1.03rem;
+}
+
+.status-text {
+  margin-top: 10px;
+  margin-bottom: 2px;
+  font-weight: 600;
+  color: #3a536d;
+  font-size: 0.92rem;
+}
+
+.status-text.error {
+  color: #bd1238;
+}
+
+.micro-readout,
+.readout-item {
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+.micro-readout {
+  margin-bottom: 0;
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.readout-list {
+  margin-top: 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.readout-item {
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 1140px) {
+  .page-grid,
+  .complex-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-scroll {
+    max-height: unset;
+  }
+}
