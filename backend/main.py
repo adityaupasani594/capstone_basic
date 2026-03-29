@@ -3,6 +3,7 @@ from typing import Dict, List
 
 import pennylane as qml
 import torch
+import torch.nn as nn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -22,6 +23,7 @@ TEMPORAL_BLEND = 0.65
 SELF_WEIGHT = 0.55
 NEIGHBOR_WEIGHT = 0.45
 MAX_JUNCTION_TRAFFIC = 100.0
+TIME_STEP_SECONDS = 15.0
 
 app = FastAPI(title="Quantum Traffic API", version="1.0.0")
 app.add_middleware(
@@ -33,6 +35,58 @@ app.add_middleware(
 )
 
 qdev = qml.device("default.qubit", wires=1)
+
+
+class TrafficQuantumLayer(nn.Module):
+    """Hybrid classical-quantum layer with a strict 4-qubit open-path circuit."""
+
+    N_QUBITS = 4
+    INPUT_FEATURES = 8
+
+    def __init__(self, output_features: int, n_layers: int = 2) -> None:
+        super().__init__()
+        self.output_features = output_features
+        self.n_layers = n_layers
+
+        # Step A: Classical bottleneck from 8 features to 4 qubit angles.
+        self.pre_projection = nn.Linear(self.INPUT_FEATURES, self.N_QUBITS)
+
+        # Trainable variational parameters for Step B.
+        self.theta = nn.Parameter(0.01 * torch.randn(n_layers, self.N_QUBITS))
+
+        # Step C: Project 4 expectation values to any downstream dimension.
+        self.post_projection = nn.Linear(self.N_QUBITS, output_features)
+
+        self.qdev = qml.device("default.qubit", wires=self.N_QUBITS)
+        self.qnode = qml.QNode(self._circuit, self.qdev, interface="torch")
+
+    def _circuit(self, alpha: torch.Tensor, weights: torch.Tensor) -> List[torch.Tensor]:
+        # Step B.1 and B.2: |0> state and angle embedding with Y rotations.
+        qml.AngleEmbedding(alpha, wires=range(self.N_QUBITS), rotation="Y")
+
+        # Step B.3: Variational RY + strict open-path entanglement 0->1->2->3.
+        for layer in range(self.n_layers):
+            for wire in range(self.N_QUBITS):
+                qml.RY(weights[layer, wire], wires=wire)
+            for wire in range(self.N_QUBITS - 1):
+                qml.CNOT(wires=[wire, wire + 1])
+
+        return [qml.expval(qml.PauliZ(wire)) for wire in range(self.N_QUBITS)]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Accept [8] or [batch, 8].
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+
+        # Step A: alpha = pi * tanh(W e).
+        alpha = torch.pi * torch.tanh(self.pre_projection(x))
+
+        # Evaluate each sample through the same QNode.
+        z_vals = [self.qnode(alpha_i, self.theta) for alpha_i in alpha]
+        z_stack = torch.stack(z_vals, dim=0)
+
+        # Step C: W' <Z> + b.
+        return self.post_projection(z_stack)
 
 
 @qml.qnode(qdev, interface="torch")
@@ -88,6 +142,27 @@ def run_st_qgcn(local_q: torch.Tensor, prev_q: torch.Tensor) -> torch.Tensor:
     return torch.stack(values)
 
 
+def build_open_path_circuit_text(n_layers: int = 2) -> str:
+    qdev_draw = qml.device("default.qubit", wires=4)
+
+    @qml.qnode(qdev_draw)
+    def open_path(alpha: torch.Tensor, theta: torch.Tensor) -> List[torch.Tensor]:
+        qml.AngleEmbedding(alpha, wires=range(4), rotation="Y")
+        for layer in range(n_layers):
+            for wire in range(4):
+                qml.RY(theta[layer, wire], wires=wire)
+            for wire in range(3):
+                qml.CNOT(wires=[wire, wire + 1])
+        return [qml.expval(qml.PauliZ(wire)) for wire in range(4)]
+
+    alpha_demo = torch.tensor([0.12, 0.38, 0.64, 0.9], dtype=torch.float32)
+    theta_demo = torch.zeros((n_layers, 4), dtype=torch.float32)
+    return qml.draw(open_path, decimals=2)(alpha_demo, theta_demo)
+
+
+OPEN_PATH_CIRCUIT_TEXT = build_open_path_circuit_text()
+
+
 @app.get("/api/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
@@ -109,6 +184,29 @@ def simple_state(payload: SimpleNetworkRequest) -> Dict[str, object]:
         probs = qubit_probs(phi[i])
         p0 = float(probs[0])
         p1 = float(probs[1])
+
+        d_norm = float(torch.clamp(density[i] / MAX_DENSITY, min=0.0, max=1.0))
+        s_norm = float(torch.clamp(speed[i] / MAX_SPEED, min=0.0, max=1.0))
+        q_local = float(local_q[i])
+        q_t = float(smoothed_q[i])
+        q_prev = float(prev_q[i])
+        temporal_delta = abs(q_t - q_prev)
+
+        phase_deg = float(min((180.0 / math.pi) * float(phi[i]), 90.0))
+        delay_seconds = phase_deg * (0.30 + 0.70 * q_t)
+
+        # Practical residue proxy: combines imbalance, saturation, and delay pressure.
+        imbalance_term = 0.45 * temporal_delta
+        saturation_term = 0.35 * (d_norm**1.15) * (1.0 - s_norm)
+        delay_term = 0.20 * min(delay_seconds / 60.0, 1.0)
+        residue_proxy = max(0.0, min(1.0, imbalance_term + saturation_term + delay_term))
+
+        flow_in = q_prev + q_local
+        flow_out = q_t
+        residue_balance = max(0.0, min(1.0, flow_in - flow_out))
+        q_flow_dt = q_t * TIME_STEP_SECONDS
+        residue_volume_dt = residue_proxy * q_flow_dt
+
         node_output[nid] = {
             "density": float(density[i]),
             "speed": float(speed[i]),
@@ -118,6 +216,22 @@ def simple_state(payload: SimpleNetworkRequest) -> Dict[str, object]:
             "amp0": float(torch.sqrt(torch.tensor(p0))),
             "amp1": float(torch.sqrt(torch.tensor(p1))),
             "color": q_to_color(float(smoothed_q[i])),
+            "phase_deg": phase_deg,
+            "delay_seconds": delay_seconds,
+            "residue_proxy": residue_proxy,
+            "residue_balance": residue_balance,
+            "flow_in": flow_in,
+            "flow_out": flow_out,
+            "q_flow_dt": q_flow_dt,
+            "residue_volume_dt": residue_volume_dt,
+            "trace": {
+                "q_local_line": f"q_local = 0.7*{d_norm:.3f} + 0.3*(1-{s_norm:.3f}) = {q_local:.3f}",
+                "temporal_line": f"q(t)={q_t:.3f}, q(t-1)={q_prev:.3f}, |delta|={temporal_delta:.3f}",
+                "phase_line": f"phi={float(phi[i]):.3f} rad => {phase_deg:.2f} deg, delay={delay_seconds:.2f} sec",
+                "residue_line": f"residue = 0.45*{temporal_delta:.3f} + 0.35*sat + 0.20*delay = {residue_proxy:.3f}",
+                "conservation_line": f"flow_in={flow_in:.3f}, flow_out={flow_out:.3f}, residue_balance={residue_balance:.3f}",
+                "dt_line": f"Q_flow(dt={TIME_STEP_SECONDS:.0f}s)={q_flow_dt:.3f}, residue_volume={residue_volume_dt:.3f}",
+            },
         }
 
     edges = []
@@ -129,10 +243,18 @@ def simple_state(payload: SimpleNetworkRequest) -> Dict[str, object]:
     return {
         "nodes": node_output,
         "edges": edges,
+        "quantum": {
+            "n_qubits": 4,
+            "input_features": 8,
+            "time_step_seconds": TIME_STEP_SECONDS,
+            "circuit_text": OPEN_PATH_CIRCUIT_TEXT,
+        },
         "summary": {
             "average_q": sum(values) / len(values),
             "peak_q": max(values),
             "mean_phi": sum(node_output[n]["phi"] for n in NODE_IDS) / len(NODE_IDS),
+            "mean_delay_seconds": sum(node_output[n]["delay_seconds"] for n in NODE_IDS) / len(NODE_IDS),
+            "mean_residue": sum(node_output[n]["residue_proxy"] for n in NODE_IDS) / len(NODE_IDS),
         },
     }
 
