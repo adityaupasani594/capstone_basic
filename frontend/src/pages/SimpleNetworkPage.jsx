@@ -97,6 +97,8 @@ export default function SimpleNetworkPage() {
         flowOut: Number(node.flow_out ?? 0),
         qFlowDt: Number(node.q_flow_dt ?? 0),
         residueVolDt: Number(node.residue_volume_dt ?? 0),
+        predictedNextQ: Number(node.predicted_next_q ?? 0),
+        predictedNextDensity: Number(node.predicted_next_density ?? 0),
         trace: node.trace || {},
       };
     });
@@ -143,7 +145,7 @@ export default function SimpleNetworkPage() {
             </label>
             {state && (
               <p className="micro-readout" style={{ background: state.nodes[id].color }}>
-                q={state.nodes[id].q_st.toFixed(3)} | phi={state.nodes[id].phi.toFixed(3)}
+                q={state.nodes[id].q_st.toFixed(3)} | q(t+1)={Number(state.nodes[id].predicted_next_q ?? 0).toFixed(3)} | phi={state.nodes[id].phi.toFixed(3)}
               </p>
             )}
           </div>
@@ -231,10 +233,10 @@ export default function SimpleNetworkPage() {
               return (
                 <div key={id} className="readout-item" style={{ background: node.color }}>
                   <span>
-                    Node {id}: q={node.q_st.toFixed(3)}, phi={node.phi.toFixed(3)} rad
+                    Node {id}: q={node.q_st.toFixed(3)}, q(t+1)={Number(node.predicted_next_q ?? 0).toFixed(3)}, phi={node.phi.toFixed(3)} rad
                   </span>
                   <span>
-                    |0&gt;~{node.amp0.toFixed(3)} | |1&gt;~{node.amp1.toFixed(3)}
+                    |0&gt;~{node.amp0.toFixed(3)} | |1&gt;~{node.amp1.toFixed(3)} | next density~{Number(node.predicted_next_density ?? 0).toFixed(2)}
                   </span>
                 </div>
               );
@@ -289,6 +291,8 @@ export default function SimpleNetworkPage() {
                 <div className="metric-row"><span>Residue balance</span><strong>{item.conserved.toFixed(3)}</strong></div>
                 <div className="metric-row"><span>Flow in / out</span><strong>{item.flowIn.toFixed(3)} / {item.flowOut.toFixed(3)}</strong></div>
                 <div className="metric-row"><span>Q(dt) / Residue vol</span><strong>{item.qFlowDt.toFixed(3)} / {item.residueVolDt.toFixed(3)}</strong></div>
+                <div className="metric-row"><span>Predicted q(t+1)</span><strong>{item.predictedNextQ.toFixed(3)}</strong></div>
+                <div className="metric-row"><span>Predicted density(t+1)</span><strong>{item.predictedNextDensity.toFixed(2)}</strong></div>
               </div>
             ))}
           </div>

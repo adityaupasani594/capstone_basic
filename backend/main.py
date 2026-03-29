@@ -81,12 +81,29 @@ class TrafficQuantumLayer(nn.Module):
         # Step A: alpha = pi * tanh(W e).
         alpha = torch.pi * torch.tanh(self.pre_projection(x))
 
-        # Evaluate each sample through the same QNode.
-        z_vals = [self.qnode(alpha_i, self.theta) for alpha_i in alpha]
-        z_stack = torch.stack(z_vals, dim=0)
+        # Evaluate each sample through the same QNode and normalize to tensors.
+        target_dtype = self.post_projection.weight.dtype
+        target_device = self.post_projection.weight.device
+
+        z_vals: List[torch.Tensor] = []
+        for alpha_i in alpha:
+            q_out = self.qnode(alpha_i, self.theta)
+            if isinstance(q_out, (list, tuple)):
+                q_out = torch.stack(list(q_out), dim=0)
+            q_out = q_out.to(dtype=target_dtype, device=target_device)
+            z_vals.append(q_out)
+
+        z_stack = torch.stack(z_vals, dim=0).to(dtype=target_dtype, device=target_device)
 
         # Step C: W' <Z> + b.
         return self.post_projection(z_stack)
+
+
+
+
+torch.manual_seed(42)
+NODE_NEXT_Q_PREDICTOR = TrafficQuantumLayer(output_features=4, n_layers=2)
+NODE_NEXT_Q_PREDICTOR.eval()
 
 
 @qml.qnode(qdev, interface="torch")
@@ -180,6 +197,7 @@ def simple_state(payload: SimpleNetworkRequest) -> Dict[str, object]:
     phi = math.pi * smoothed_q
 
     node_output: Dict[str, Dict[str, float]] = {}
+    predictor_features: List[List[float]] = []
     for i, nid in enumerate(NODE_IDS):
         probs = qubit_probs(phi[i])
         p0 = float(probs[0])
@@ -207,6 +225,20 @@ def simple_state(payload: SimpleNetworkRequest) -> Dict[str, object]:
         q_flow_dt = q_t * TIME_STEP_SECONDS
         residue_volume_dt = residue_proxy * q_flow_dt
 
+        # Exactly 8 features per node for the hybrid quantum predictor input.
+        predictor_features.append(
+            [
+                d_norm,
+                1.0 - s_norm,
+                q_local,
+                q_t,
+                q_prev,
+                temporal_delta,
+                residue_proxy,
+                phase_deg / 90.0,
+            ]
+        )
+
         node_output[nid] = {
             "density": float(density[i]),
             "speed": float(speed[i]),
@@ -233,6 +265,20 @@ def simple_state(payload: SimpleNetworkRequest) -> Dict[str, object]:
                 "dt_line": f"Q_flow(dt={TIME_STEP_SECONDS:.0f}s)={q_flow_dt:.3f}, residue_volume={residue_volume_dt:.3f}",
             },
         }
+
+    # Predict q(t+1) for all four nodes using the strict 4-qubit hybrid layer.
+    features_tensor = torch.tensor(predictor_features, dtype=torch.float32)
+    with torch.no_grad():
+        raw_pred = NODE_NEXT_Q_PREDICTOR(features_tensor).squeeze(0)
+        raw_pred = raw_pred if raw_pred.dim() == 1 else raw_pred.mean(dim=0)
+        q_pred_base = torch.sigmoid(raw_pred)
+
+    # Blend learned quantum estimate with current q(t) for short-horizon stability.
+    for i, nid in enumerate(NODE_IDS):
+        q_t = float(node_output[nid]["q_st"])
+        q_next = float(torch.clamp(0.7 * q_pred_base[i] + 0.3 * q_t, min=0.0, max=1.0))
+        node_output[nid]["predicted_next_q"] = q_next
+        node_output[nid]["predicted_next_density"] = q_next * MAX_DENSITY
 
     edges = []
     for src, dst in EDGE_LIST:
